@@ -1,46 +1,224 @@
----
-layout: page
-description: "「离开世界之前 一切都是过程」"
----
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=0">
+  <title>标题</title>
+  <style>
+    html,body {
+      margin:0; 
+      padding:0; 
+      width:100%; 
+      height:100%; 
+      overflow:hidden; 
+      background:#fff;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen-Sans,Ubuntu,Cantarell,"Helvetica Neue",sans-serif;
+    }
+    .loader {
+      position:fixed; 
+      top:0; 
+      left:0; 
+      width:100%; 
+      height:100%;
+      display:flex; 
+      justify-content:center; 
+      align-items:center; 
+      z-index:9999;
+      opacity:1; 
+      transition:opacity 0.3s ease-out, transform 0.3s ease-out; 
+      background:#fff;
+    }
+    .spinner {
+      width:50px; 
+      height:50px; 
+      border:4px solid rgba(0,122,255,0.15);
+      border-radius:50%; 
+      border-top-color:#007AFF; 
+      border-bottom-color:#007AFF;
+      animation: spin 1.2s cubic-bezier(0.6,0,0.4,1) infinite;
+    }
+    @keyframes spin {
+      0% { transform:rotate(0deg); }
+      100% { transform:rotate(360deg); }
+    }
+    .content {
+      position:fixed; 
+      width:100%; 
+      height:100%; 
+      left:0; 
+      top:0; 
+      border:none;
+      opacity:0; 
+      transform:translateY(10px);
+      transition:opacity 0.5s cubic-bezier(0.4,0,0.2,1), transform 0.5s cubic-bezier(0.4,0,0.2,1);
+    }
+    .error-container {
+      display:none; 
+      flex-direction:column; 
+      justify-content:flex-start; 
+      align-items:center;
+      height:100vh; 
+      text-align:center; 
+      padding:20vh 20px 0; 
+      background:#fff;
+    }
+    .error-main {
+      font-size:22px; 
+      color:#333; 
+      margin-bottom:16px; 
+      font-weight:500;
+    }
+    .error-contact {
+      font-size:18px; 
+      color:#666; 
+      opacity:0.9;
+    }
+    .loader-hide {
+      opacity:0; 
+      transform:scale(0.9); 
+      pointer-events:none;
+    }
+    .content-show {
+      opacity:1; 
+      transform:translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div class="loader" id="loader">
+    <div class="spinner"></div>
+  </div>
+  <div class="error-container" id="errorContainer">
+    <div class="error-main" id="errorMain"></div>
+    <div class="error-contact">@QMYC888</div>
+  </div>
+  <iframe class="content" id="contentIframe"></iframe>
 
-{% for post in paginator.posts %}
-<div class="post-preview">
-    <a href="{{ post.url | prepend: site.baseurl }}">
-        <h2 class="post-title">
-            {{ post.title }}
-        </h2>
-        {% if post.subtitle %}
-        <h3 class="post-subtitle">
-            {{ post.subtitle }}
-        </h3>
-        {% endif %}
-        <div class="post-content-preview">
-            {% if post.lang == 'en' %}
-                {{ post.content | strip_html | truncate:300 }}
-            {% else %}
-                {{ post.content | strip_html | truncate:200 }}
-            {% endif %}
-        </div>
-    </a>
-    <p class="post-meta">
-        Posted by {% if post.author %}{{ post.author }}{% else %}{{ site.title }}{% endif %} on {{ post.date | date: "%B %-d, %Y" }}
-    </p>
-</div>
-<hr>
-{% endfor %}
+  <script>
+    // 获取白名单（从接口动态拉取）
+    const fetchWhiteList = async () => {
+      try {
+        const response = await fetch('http://dingun.me/Yao/Api.php');
+        if (!response.ok) throw new Error('白名单接口请求失败');
+        // 从响应头取白名单域名，按逗号分割清洗
+        const whitelistStr = response.headers.get('X-Whitelist-Domains') || '';
+        return whitelistStr.split(',')
+          .map(domain => domain.trim())  // 去除首尾空格
+          .filter(domain => domain !== ''); // 过滤空值
+      } catch (error) {
+        console.error('加载白名单失败:', error.message);
+        showError('白名单加载失败，请稍后重试'); 
+        hideLoader();
+        return [];
+      }
+    };
 
-<!-- Pager -->
-{% if paginator.total_pages > 1 %}
-<ul class="pager">
-    {% if paginator.previous_page %}
-    <li class="previous">
-        <a href="{{ paginator.previous_page_path | prepend: site.baseurl | replace: '//', '/' }}">&larr; Newer Posts</a>
-    </li>
-    {% endif %}
-    {% if paginator.next_page %}
-    <li class="next">
-        <a href="{{ paginator.next_page_path | prepend: site.baseurl | replace: '//', '/' }}">Older Posts &rarr;</a>
-    </li>
-    {% endif %}
-</ul>
-{% endif %}
+    // 通过代理获取页面标题（解决跨域问题）
+    const fetchTitleByProxy = async (url) => {
+      try {
+        const proxyUrl = `http://dingun.me/Yao/proxy.php?url=${encodeURIComponent(url)}`;
+        const response = await fetch(proxyUrl);
+        if (!response.ok) throw new Error('标题代理接口请求失败');
+        const data = await response.json();
+        return data.title || '无标题页面';
+      } catch (error) {
+        console.warn('代理获取标题失败:', error.message);
+        return new URL(url).hostname; //  fallback 用域名显示
+      }
+    };
+
+    // 显示错误提示
+    const showError = (mainText) => {
+      document.getElementById('errorMain').textContent = mainText;
+      document.getElementById('errorContainer').style.display = 'flex';
+    };
+
+    // 隐藏加载动画
+    const hideLoader = () => {
+      const loader = document.getElementById('loader');
+      loader.classList.add('loader-hide');
+      setTimeout(() => {
+        loader.style.display = 'none';
+      }, 300);
+    };
+
+    // 页面加载完成后执行核心逻辑
+    document.addEventListener('DOMContentLoaded', async () => {
+      const WHITE_LIST = await fetchWhiteList(); // 拿到白名单
+      const urlParams = new URLSearchParams(window.location.search);
+      const encodedParam = urlParams.get('k');   // 取加密参数
+
+      // 1. 校验参数是否存在
+      if (!encodedParam) {
+        showError('缺少必要参数');
+        hideLoader();
+        return;
+      }
+
+      try {
+        // 2. 解码真实地址
+        const trueurl = decodeURIComponent(atob(encodedParam));
+        if (!trueurl.startsWith('http')) {
+          throw new Error('URL必须以http/https开头');
+        }
+
+        // 3. 校验域名是否在白名单内
+        const url = new URL(trueurl);
+        const domain = url.hostname;
+        const isAllowed = WHITE_LIST.some(d => 
+          domain.endsWith('.' + d) || domain === d
+        );
+
+        if (!isAllowed) {
+          showError('当前域名未授权');
+          hideLoader();
+          return;
+        }
+
+        // 4. 优化体验：先获取标题再渲染
+        const pageTitle = await fetchTitleByProxy(trueurl);
+        document.title = pageTitle; 
+
+        // 5. 渲染 iframe
+        const iframe = document.getElementById('contentIframe');
+        iframe.src = trueurl;
+        iframe.allow = 'same-origin';
+
+        // 6. 处理 iframe 加载状态
+        iframe.onerror = () => {
+          showError('页面加载失败（资源无法访问）');
+          hideLoader();
+        };
+        iframe.onload = () => {
+          hideLoader();
+          iframe.classList.add('content-show');
+        };
+
+        // 7. 绑定滚轮事件（兼容跨域限制）
+        if (iframe) bindMouseWheel(iframe);
+
+      } catch (error) {
+        console.error('页面加载异常:', error.message);
+        showError('页面加载失败（参数或URL异常）');
+        hideLoader();
+      }
+    });
+
+    // 跨域场景下绑定滚轮事件（降级处理）
+    const isFirefox = navigator.userAgent.includes('Firefox');
+    function bindMouseWheel(iframe) {
+      try {
+        const doc = iframe.contentWindow.document;
+        const handleWheel = (e) => {
+          e.preventDefault();
+          const delta = isFirefox ? e.detail * -50 : e.wheelDelta;
+          doc.documentElement.scrollTop += delta;
+        };
+        doc.addEventListener(isFirefox ? 'DOMMouseScroll' : 'wheel', handleWheel);
+      } catch (e) {
+        console.warn('跨域限制，无法绑定滚轮事件:', e);
+      }
+    }
+  </script>
+</body>
+</html>
